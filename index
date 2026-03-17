@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixed Key System | Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --main: #00e5ff; --bg: #080a10; --card: #111620; --input: #1a202c; --text: #ffffff; --danger: #ff4d4d; --warn: #ffaa00; }
+        body { font-family: 'Kanit', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: var(--card); padding: 25px; border-radius: 15px; width: 100%; max-width: 900px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h2 { color: var(--main); text-align: center; margin-top: 0; text-transform: uppercase; font-size: 20px; letter-spacing: 1px; }
+        
+        .admin-auth { margin-bottom: 20px; width: 100%; max-width: 400px; text-align: center; }
+        .admin-auth input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--main); background: var(--input); color: white; text-align: center; outline: none; }
+
+        .form-grid { display: grid; grid-template-columns: 1.5fr 1.5fr 0.5fr 1fr; gap: 10px; align-items: end; }
+        .group { display: flex; flex-direction: column; }
+        label { font-size: 12px; color: #8a99af; margin-bottom: 5px; }
+        input[type="text"], input[type="datetime-local"] { padding: 10px; border-radius: 8px; border: 1px solid #2d343f; background: var(--input); color: white; outline: none; }
+        .btn-add { padding: 11px; border-radius: 8px; border: none; background: var(--main); color: #080a10; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn-add:hover { filter: brightness(1.2); }
+
+        .table-wrapper { width: 100%; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #0c1016; border-radius: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #1f2633; }
+        th { background: #171d29; color: var(--main); font-size: 13px; }
+        td { font-size: 13px; color: #cbd5e0; }
+        .btn-del { background: var(--danger); color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin-left: 5px; }
+        .btn-edit { background: var(--warn); color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+        .perm-tag { color: #00ff88; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="admin-auth">
+        <label>Admin Access Password</label>
+        <input type="password" id="admin_pw" placeholder="ใส่รหัสผ่านแอดมินเพื่อเริ่มงาน">
+    </div>
+
+    <div class="container">
+        <h2>➕ เพิ่มคีย์ใหม่</h2>
+        <div class="form-grid">
+            <div class="group">
+                <label>Key Name</label>
+                <input type="text" id="k_name" placeholder="ระบุคีย์...">
+            </div>
+            <div class="group">
+                <label>วันหมดอายุ</label>
+                <input type="datetime-local" id="k_date">
+            </div>
+            <div class="group" style="flex-direction: row; align-items: center; gap: 5px; padding-bottom: 10px;">
+                <input type="checkbox" id="k_perm"> <label style="margin:0">ถาวร</label>
+            </div>
+            <button class="btn-add" id="addBtn">บันทึก & รีเฟรช</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📊 ตารางจัดการคีย์ (Real-time)</h2>
+        <div class="table-wrapper">
+            <table id="keyList">
+                <thead>
+                    <tr>
+                        <th>Key</th>
+                        <th>สร้างเมื่อ</th>
+                        <th>หมดอายุ</th>
+                        <th>เครื่องมือ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+<script>
+    // Config decryption
+    const _c = {
+        u: "aHR0cHM6Ly9kaXNjYmJyb3JkLWI5NzU3LWRlZmF1bHQtcnRkYi5maXJlYmFzZWlvLmNvbQ==",
+        p: "RzFWQ0p2T2x6MTNuMTdCOVFiTk9XZGkyOGpnN24xMTRLMlk1NlZSNXg="
+    };
+    const dec = (s) => atob(s);
+    const FB_URL = dec(_c.u);
+    const AUTH_KEY = dec(_c.p);
+
+    // ฟังก์ชันดึงข้อมูลมาแสดงในตาราง
+    async function refreshTable() {
+        const tbody = document.querySelector("#keyList tbody");
+        try {
+            const response = await fetch(`${FB_URL}/keys.json`);
+            const data = await response.json();
+            
+            tbody.innerHTML = ""; // เคลียร์ตารางก่อนโหลดใหม่
+            
+            if (!data || Object.keys(data).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">ไม่พบข้อมูลคีย์ในระบบ</td></tr>';
+                return;
+            }
+
+            Object.keys(data).forEach(id => {
+                const info = data[id];
+                const row = `
+                    <tr>
+                        <td><strong>${id}</strong></td>
+                        <td>${info.created_at || '-'}</td>
+                        <td>${info.expiry === 'Permanent' ? '<span class="perm-tag">ถาวร</span>' : info.expiry}</td>
+                        <td>
+                            <button class="btn-edit" onclick="updateKey('${id}')">แก้ไข</button>
+                            <button class="btn-del" onclick="deleteKey('${id}')">ลบ</button>
+                        </td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        } catch (err) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:red;">เชื่อมต่อฐานข้อมูลล้มเหลว</td></tr>';
+        }
+    }
+
+    // ฟังก์ชันเพิ่ม Key
+    document.getElementById('addBtn').onclick = async function() {
+        const pw = document.getElementById('admin_pw').value;
+        const name = document.getElementById('k_name').value.trim();
+        const isPerm = document.getElementById('k_perm').checked;
+        const date = document.getElementById('k_date').value;
+
+        if (pw !== AUTH_KEY) return alert("❌ รหัสผ่านผิด!");
+        if (!name) return alert("❌ กรุณาใส่ชื่อคีย์!");
+
+        this.disabled = true;
+        this.innerText = "กำลังบันทึก...";
+
+        const payload = {
+            expiry: isPerm ? "Permanent" : date,
+            created_at: new Date().toLocaleString('th-TH'),
+            status: "Active"
+        };
+
+        try {
+            await fetch(`${FB_URL}/keys/${name}.json`, {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+            document.getElementById('k_name').value = ""; // เคลียร์ช่องใส่ชื่อ
+            await refreshTable(); // รีเฟรชตารางทันที
+            alert("✅ บันทึกสำเร็จ!");
+        } catch (e) {
+            alert("❌ บันทึกล้มเหลว!");
+        } finally {
+            this.disabled = false;
+            this.innerText = "บันทึก & รีเฟรช";
+        }
+    };
+
+    // ฟังก์ชันลบ Key
+    window.deleteKey = async function(id) {
+        if (document.getElementById('admin_pw').value !== AUTH_KEY) return alert("ใส่รหัสแอดมินก่อน!");
+        if (!confirm(`ต้องการลบ ${id} ใช่ไหม?`)) return;
+
+        await fetch(`${FB_URL}/keys/${id}.json`, { method: 'DELETE' });
+        refreshTable();
+    };
+
+    // ฟังก์ชันแก้ไข Key
+    window.updateKey = async function(id) {
+        if (document.getElementById('admin_pw').value !== AUTH_KEY) return alert("ใส่รหัสแอดมินก่อน!");
+        const newVal = prompt("แก้วันหมดอายุ (YYYY-MM-DDTHH:MM) หรือพิมพ์ Permanent");
+        if (!newVal) return;
+
+        await fetch(`${FB_URL}/keys/${id}/expiry.json`, { 
+            method: 'PUT', 
+            body: JSON.stringify(newVal) 
+        });
+        refreshTable();
+    };
+
+    // โหลดครั้งแรก
+    refreshTable();
+</script>
+</body>
+</html>
